@@ -7,7 +7,7 @@ import string
 import math
 import pandas as pd
 from urllib.parse import urlencode
-
+import ast
 
 def redate(date_string):
     # convert dates from AO3 formate to YYYYMMDD integer string, via datetime
@@ -59,7 +59,7 @@ def query_AO3_work(work):
             wurl = 'https://archiveofourown.org' + url
             n = url.split('/')
             node =  int(n[-1])
-            title = v.a.string
+            title = str(v.a.string)
         else:
             if url.endswith('/gifts'):
                 gift.append(ref.a.string)
@@ -323,3 +323,42 @@ def work_eval_print(work):
     print('Summary: ' + Summary)
     
     return
+
+def db2sqlTypes(df_work):
+    # convert columns of database into values suitable for sql_types
+    #    floats to int (specifically appropriate for this project)
+    #    lists to string
+    df_sql = pd.DataFrame(index = df_work.index)
+    cols = df_work.columns
+    for c in cols:
+        A = df_work[c]
+        B = []
+        for a in A:
+            if type(a) is list:
+                B.append('list'+str(a))
+            if type(a) is float:
+                B.append(int(a))
+            if type(a) is str:
+                B.append(a)
+        df_sql[c] = pd.Series(B,df_work.index)
+    return df_sql
+
+def sql2dbListTypes(data,cols):
+    # convert back sqlite db of works to pandas dataFramewith more complex objects
+    # namely, convert table entry strings that start with '[' into lists. 
+    # Inputs: data is the output of the .fetchall(), a list of ordered entries 
+    #         cols are the column titles to build back into a pandas database
+    df_full = pd.DataFrame(columns = cols)
+    for r in data: # entries row by row, yeah it's slow
+        row = []
+        for i in range(len(r)):
+            if type(r[i]) is str:
+                if r[i].startswith('list['):
+                    row.append(ast.literal_eval(r[i][4:]))
+                else:
+                    row.append(r[i])
+            else:
+                row.append(r[i])
+        ent = dict(zip(cols,row)) 
+        df_full=df_full.append(ent,ignore_index=True)
+    return df_full
