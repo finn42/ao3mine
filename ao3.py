@@ -8,6 +8,7 @@ import math
 import pandas as pd
 from urllib.parse import urlencode
 import ast
+import sqlite3
 
 def redate(date_string):
     # convert dates from AO3 formate to YYYYMMDD integer string, via datetime
@@ -123,8 +124,9 @@ def query_AO3_work(work):
         if v.dd['class']==['language']:
             language = str(tag.string)
         if v.dd['class']==['words']:
-            w = tag.string.split(',')
-            words = int(''.join(w))  
+            if tag.string is not None:
+                w = tag.string.split(',')
+                words = int(''.join(w))  
         if v.dd['class']==['chapters']:
             w = v.get_text()
             w = w.split('/')
@@ -296,8 +298,9 @@ def work_eval_print(work):
         if v.dd['class']==['language']:
             print('Language: ' + tag.string)
         if v.dd['class']==['words']:
-            w = tag.string.split(',')
-            print('Words: ' + ''.join(w))  
+            if tag.string is not None:
+                w = tag.string.split(',')
+                print('Words: ' + ''.join(w))  
         if v.dd['class']==['chapters']:
             w = v.get_text()
             w = w.split('/')
@@ -356,9 +359,85 @@ def sql2dbListTypes(data,cols):
                 if r[i].startswith('list['):
                     row.append(ast.literal_eval(r[i][4:]))
                 else:
-                    row.append(r[i])
+                    if r[i].startswith('[') and r[i].endswith(']'):
+                        if len(r[i].split(','))>1:
+                            row.append(ast.literal_eval(r[i]))
+                        else: 
+                            if r[i].endswith('"]'):
+                                row.append(ast.literal_eval(r[i]))
+                            else:
+                                row.append(r[i])
+                    else:
+                        row.append(r[i])
             else:
                 row.append(r[i])
-        ent = dict(zip(cols,row)) 
+        ent = dict(zip(cols,row))
         df_full=df_full.append(ent,ignore_index=True)
     return df_full
+
+def ao3_sql_2_db(sqlName):
+    conn = sqlite3.connect(sqlName)  
+    c = conn.cursor()
+    c.execute("SELECT * FROM WORKS")
+    cols = [tuple[0] for tuple in c.description]
+    req ="SELECT * FROM WORKS"
+    res = pd.read_sql(req, conn)
+    tic = time.time()
+    df_DB = pd.DataFrame(index = res.index)
+    list_feilds = [ 'Creator', 'Gift', 'cURL', 'Fandom', 'Category', 'Warning', 'Relationship_tags', 'Character_tags', 'Freeform_tags', 'Tags', 'Chapters', 'Series', 'Series_part', 'sURL']
+    for feild in cols:
+        req ="SELECT " + feild + " FROM WORKS"
+        res = pd.read_sql(req, conn)
+        if feild in list_feilds:
+            res2 = pd.DataFrame(index=res.index,columns=[feild])
+            for index, row in res.iterrows():
+                res2.loc[index,feild] = ast.literal_eval(row[feild][4:])
+            res = res2.copy()
+        if feild.startswith('Date'):
+            res2 = pd.DataFrame(index=res.index,columns=[feild])
+            for index, row in res.iterrows():
+                res2.loc[index,feild] = to_datetime(row[feild])
+            res = res2.copy()
+        df_DB[feild] = res
+    
+    return df_DB
+
+# http://rightfootin.blogspot.com/2006/09/more-on-python-flatten.html
+def flatten(l, ltypes=(list, tuple)):
+    ltype = type(l)
+    l = list(l)
+    i = 0
+    while i < len(l):
+        while isinstance(l[i], ltypes):
+            if not l[i]:
+                l.pop(i)
+                i -= 1
+                break
+            else:
+                l[i:i + 1] = l[i]
+        i += 1
+    return ltype(l)
+
+def daysSince(date,dateRef):
+    dRef = str(dateRef)
+    yrRef = int(dRef[0:4])
+    mnRef = int(dRef[4:6])
+    dyRef = int(dRef[6:8])
+                
+    d = str(date)
+    yr = int(d[0:4])
+    mn = int(d[4:6])
+    dy = int(d[6:8])
+    d = datetime.datetime(yr,mn,dy) - datetime.datetime(yrRef,mnRef,dyRef)
+    
+    return d.days
+
+def to_datetime(date):
+    d = str(date)
+    yr = int(d[0:4])
+    mn = int(d[4:6])
+    dy = int(d[6:8])  
+    d = datetime.datetime(yr,mn,dy)
+
+    return d
+  
