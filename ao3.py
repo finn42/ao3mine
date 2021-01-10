@@ -5,6 +5,7 @@ from datetime import datetime as dtime
 from bs4 import BeautifulSoup
 import string
 import math
+import numpy as np
 import pandas as pd
 from urllib.parse import urlencode
 import ast
@@ -440,4 +441,77 @@ def to_datetime(date):
     d = datetime.datetime(yr,mn,dy)
 
     return d
+
+def timeStats_numeric(df_DB,dateSeries,feildName):
+    # dateSeries is a date range ex: months = pd.Series(pd.date_range("2010-01-01", "2021-01-01", freq="M")
+    # df_DB is a pandas dataframe of fanworks metadata that includes the feild 'Date' per work, meaning the date the work was last updated in the source database.
+    # feildName is the feild to be evaluated in the intervals set out by the dateSeries
+    #    at present, this feild must be numeric (float or int)
+    
+    # the output dataframe
+    df_stats = pd.DataFrame(index = dateSeries[:-1])
+    work_counts = []
+    
+    # if type is Numeric:
+    feild_totals = []
+    feild_median = []
+
+    # evaluate between dates of the dateSeries
+    for m_i in range(len(dateSeries)-1):
+        mask = (df_DB['Date']> dateSeries[m_i]) & (df_DB['Date']<= dateSeries[m_i+1])
+        interval_works = df_DB.loc[mask]
+    
+        work_counts.append(len(interval_works))
+        # if type is Numeric: 
+        feild_totals.append(interval_works[feildName].sum())
+        feild_median.append(interval_works[feildName].median())
+
+    df_stats['Work_Counts'] = work_counts
+    df_stats['Median_' + feildName] = feild_median
+    df_stats['Total_' + feildName] = feild_totals
+    
+    return df_stats
+
+def timeStats_list(df_DB,dateSeries,feildName):
+    # dateSeries is a date range ex: months = pd.Series(pd.date_range("2010-01-01", "2021-01-01", freq="M")
+    # df_DB is a pandas dataframe of fanworks metadata that includes the feild 'Date' per work, meaning the date the work was last updated in the source database.
+    # feildName is the feild to be evaluated in the intervals set out by the dateSeries
+    #    at present, this feild must be numeric (float or int)
+    df_stats = pd.DataFrame(index = dateSeries[:-1])
+
+    # if type is list of strings, like tags, creators, etc:
+    work_counts = []
+    feild_uniqueN = [] # number of unique strings across all work lists in interval
+    feild_unique = [] # actual lists of unique entries
+    feild_meanN = [] # median number of strings per work list
+    feild_newN = [] # number of new unique strings in this interval, assuming the date intervals are chronological
+    feild_new = [] # actual lists of unique new entries this interval
+    list_all = []
+    # evaluate between dates of the dateSeries
+    for m_i in range(len(dateSeries)-1):
+        mask = (df_DB['Date']> dateSeries[m_i]) & (df_DB['Date']<= dateSeries[m_i+1])
+        interval_works = df_DB.loc[mask]    
+        work_counts.append(len(interval_works))
+
+        full_list = flatten(list(interval_works[feildName].values))
+        flatList = np.unique(full_list)
+        feild_uniqueN.append(len(flatList))# number of unique strings across all work lists in interval
+        feild_unique.append(flatList)# actual lists of unique entries
+        if len(interval_works)>0:
+            feild_meanN.append(len(full_list)/len(interval_works)) # median number of strings per work list
+        else:
+            feild_meanN.append(0)
+        new_strings = np.setdiff1d(flatList,list_all)
+        feild_newN.append(len(new_strings))# number of new unique strings in this interval, assuming the date intervals are chronological
+        feild_new.append(new_strings) # actual lists of unique new entries this interval
+        list_all = np.union1d(flatList,list_all)
+        
+    df_stats['Work_Counts'] = work_counts
+    df_stats['Unique_Count_' + feildName] = feild_uniqueN
+    df_stats['Unique_' + feildName] = feild_unique 
+    df_stats['Mean_Count_' + feildName] = feild_meanN
+    df_stats['New_Count_' + feildName] = feild_newN
+    df_stats['New_' + feildName] = feild_new
+    
+    return df_stats
   
